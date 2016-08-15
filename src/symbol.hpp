@@ -13,10 +13,10 @@
 #include <string>
 #include <vector>
 
-#include "mxnet-cpp/logging.h"
-#include "mxnet-cpp/symbol.h"
+#include "logging.h"
+#include "symbol.h"
 
-#include "mxnet-cpp/op_suppl.h"
+#include "op_suppl.h"
 
 namespace mxnet {
 namespace cpp {

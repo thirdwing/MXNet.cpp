@@ -9,7 +9,7 @@
 
 #include <string>
 #include <vector>
-#include "mxnet-cpp/io.h"
+#include "io.h"
 
 namespace mxnet {
 namespace cpp {

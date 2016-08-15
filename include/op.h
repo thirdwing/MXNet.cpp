@@ -10,9 +10,9 @@
 
 #include <string>
 #include <vector>
-#include "mxnet-cpp/base.h"
-#include "mxnet-cpp/shape.h"
-#include "mxnet-cpp/MxNetCpp.h"
+#include "base.h"
+#include "shape.h"
+#include "MxNetCpp.h"
 
 namespace mxnet {
 namespace cpp {
@@ -91,38 +91,50 @@ inline Symbol BlockGrad(const std::string& symbol_name,
 }
 
 /*!
- * \breif (Deprecated! Use sum_axis instead.
- *        ) Take sum of the src.The result will be ndarray of shape (1,) on the
- *        same device.
+ * \breif Take sum of the src in the given axis and returns a NDArray.
+ *        Follows numpy semantics.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
+ * \param axis Same as Numpy.
+ *        The axes to perform the reduction.If left empty, a global reduction
+ *        will be performed.
+ * \param keepdims Same as Numpy.
+ *        If keepdims is set to true, the axis which is reduced is left in the
+ *        result as dimension with size one.
  * \return new symbol
  */
 inline Symbol sum(const std::string& symbol_name,
-                  Symbol lhs,
-                  Symbol rhs) {
+                  Symbol src,
+                  Shape axis = Shape(),
+                  bool keepdims = false) {
   return Operator("sum")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetParam("axis", axis)
+           .SetParam("keepdims", keepdims)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
- * \breif Take sum of the src in the given axis.
- *        axis=-1 means to reduce all the dimensions.The keepdims option has
- *        the same meaning as Numpy.
+ * \breif (Depreciated! Use sum instead!) Take sum of the src in the given axis
+ *        and returns a NDArray. Follows numpy semantics.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
+ * \param axis Same as Numpy.
+ *        The axes to perform the reduction.If left empty, a global reduction
+ *        will be performed.
+ * \param keepdims Same as Numpy.
+ *        If keepdims is set to true, the axis which is reduced is left in the
+ *        result as dimension with size one.
  * \return new symbol
  */
 inline Symbol sum_axis(const std::string& symbol_name,
-                       Symbol lhs,
-                       Symbol rhs) {
+                       Symbol src,
+                       Shape axis = Shape(),
+                       bool keepdims = false) {
   return Operator("sum_axis")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetParam("axis", axis)
+           .SetParam("keepdims", keepdims)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
@@ -130,16 +142,39 @@ inline Symbol sum_axis(const std::string& symbol_name,
  * \breif Broadcast data in the given axis to the given size.
  *        The original size of the broadcasting axis must be 1.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
+ * \param axis The axes to perform the broadcasting. 
+ * \param size Target sizes of the broadcasting axes. 
  * \return new symbol
  */
 inline Symbol broadcast_axis(const std::string& symbol_name,
-                             Symbol lhs,
-                             Symbol rhs) {
+                             Symbol src,
+                             Shape axis = Shape(),
+                             Shape size = Shape()) {
   return Operator("broadcast_axis")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetParam("axis", axis)
+           .SetParam("size", size)
+           .SetInput("src", src)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
+ * \breif Broadcast data to the target shape.
+ *        The original size of the broadcasting axis must be 1.
+ * \param symbol_name name of the resulting symbol.
+ * \param src Left symbolic input to the function.
+ * \param shape The shape of the desired array.
+ *        We can set the dim to zero if it's same as the original. E.g `A =
+ *        broadcast_to(B, shape=(10, 0, 0))` has the same meaning as `A =
+ *        broadcast_axis(B, axis=0, size=10)`.
+ * \return new symbol
+ */
+inline Symbol broadcast_to(const std::string& symbol_name,
+                           Symbol src,
+                           Shape shape = Shape()) {
+  return Operator("broadcast_to")
+           .SetParam("shape", shape)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
@@ -195,22 +230,37 @@ inline Symbol Concat(const std::string& symbol_name,
            .CreateSymbol(symbol_name);
 }
 
+/*! \breif Whether to find convolution algo by running performance test.
+ *        Leads to higher startup time but may give better speed.auto tune is
+ *        turned off by default.Set environment varialbe
+ *        MXNET_CUDNN_AUTOTUNE_DEFAULT=1 to turn on by default.
+ */
+enum class ConvolutionCudnnTune {
+  fastest = 0,
+  limited_workspace = 1,
+  off = 2
+};
+
 /*!
  * \breif Apply convolution to input then add a bias. 
  * \param symbol_name name of the resulting symbol.
  * \param data Input data to the ConvolutionOp. 
  * \param weight Weight matrix. 
  * \param bias Bias parameter. 
- * \param kernel convolution kernel size: (y, x).
+ * \param kernel convolution kernel size: (y, x) or (d, y, x).
  * \param num_filter convolution filter(channel) number.
- * \param stride convolution stride: (y, x).
+ * \param stride convolution stride: (y, x) or (d, y, x).
  * \param dilate convolution dilate: (y, x).
- * \param pad pad for convolution: (y, x).
+ * \param pad pad for convolution: (y, x) or (d, y, x).
  * \param num_group Number of groups partition.
  *        This option is not supported by CuDNN, you can use SliceChannel to
  *        num_group,apply convolution and concat instead to achieve the same need.
  * \param workspace Tmp workspace for convolution (MB). 
  * \param no_bias Whether to disable bias parameter. 
+ * \param cudnn_tune Whether to find convolution algo by running performance test.
+ *        Leads to higher startup time but may give better speed.auto tune is
+ *        turned off by default.Set environment varialbe
+ *        MXNET_CUDNN_AUTOTUNE_DEFAULT=1 to turn on by default.
  * \return new symbol
  */
 inline Symbol Convolution(const std::string& symbol_name,
@@ -223,8 +273,14 @@ inline Symbol Convolution(const std::string& symbol_name,
                           Shape dilate = Shape(1,1),
                           Shape pad = Shape(0,0),
                           int num_group = 1,
-                          int64_t workspace = 512,
-                          bool no_bias = false) {
+                          int64_t workspace = 1024,
+                          bool no_bias = false,
+                          ConvolutionCudnnTune cudnn_tune = ConvolutionCudnnTune::off) {
+  static const char *ConvolutionCudnnTuneValues[] = {
+    "fastest",
+    "limited_workspace",
+    "off"
+  };
   return Operator("Convolution")
            .SetParam("kernel", kernel)
            .SetParam("num_filter", num_filter)
@@ -234,9 +290,44 @@ inline Symbol Convolution(const std::string& symbol_name,
            .SetParam("num_group", num_group)
            .SetParam("workspace", workspace)
            .SetParam("no_bias", no_bias)
+           .SetParam("cudnn_tune", ConvolutionCudnnTuneValues[int(cudnn_tune)])
            .SetInput("data", data)
            .SetInput("weight", weight)
            .SetInput("bias", bias)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
+ * \breif Apply correlation to inputs.
+ * \param symbol_name name of the resulting symbol.
+ * \param data1 Input data1 to the correlation. 
+ * \param data2 Input data2 to the correlation. 
+ * \param kernel_size kernel size for Correlation must be an odd number.
+ * \param max_displacement Max displacement of Correlation .
+ * \param stride1 stride1 quantize data1 globally.
+ * \param stride2 stride2 quantize data2 within the neighborhood centered around data1.
+ * \param pad_size pad for Correlation.
+ * \param is_multiply operation type is either multiplication or subduction.
+ * \return new symbol
+ */
+inline Symbol Correlation(const std::string& symbol_name,
+                          Symbol data1,
+                          Symbol data2,
+                          int kernel_size = 1,
+                          int max_displacement = 1,
+                          int stride1 = 1,
+                          int stride2 = 1,
+                          int pad_size = 0,
+                          bool is_multiply = true) {
+  return Operator("Correlation")
+           .SetParam("kernel_size", kernel_size)
+           .SetParam("max_displacement", max_displacement)
+           .SetParam("stride1", stride1)
+           .SetParam("stride2", stride2)
+           .SetParam("pad_size", pad_size)
+           .SetParam("is_multiply", is_multiply)
+           .SetInput("data1", data1)
+           .SetInput("data2", data2)
            .CreateSymbol(symbol_name);
 }
 
@@ -294,7 +385,12 @@ inline Symbol Custom(const std::string& symbol_name,
  * \param kernel deconvolution kernel size: (y, x).
  * \param num_filter deconvolution filter(channel) number.
  * \param stride deconvolution stride: (y, x).
- * \param pad pad for deconvolution: (y, x).
+ * \param pad pad for deconvolution: (y, x), a good number is : (kernel-1)/2,
+ *        if target_shape set, pad will be ignored and will be computed
+ *        automatically
+ * \param adj adjustment for output shape: (y, x), if target_shape set, adj
+ *        will be ignored and will be computed automatically
+ * \param target_shape output shape with targe shape : (y, x).
  * \param num_group number of groups partition.
  * \param workspace Tmp workspace for deconvolution (MB).
  * \param no_bias Whether to disable bias parameter. 
@@ -308,6 +404,8 @@ inline Symbol Deconvolution(const std::string& symbol_name,
                             int num_filter,
                             Shape stride = Shape(1,1),
                             Shape pad = Shape(0,0),
+                            Shape adj = Shape(0,0),
+                            Shape target_shape = Shape(0,0),
                             int num_group = 1,
                             int64_t workspace = 512,
                             bool no_bias = true) {
@@ -316,6 +414,8 @@ inline Symbol Deconvolution(const std::string& symbol_name,
            .SetParam("num_filter", num_filter)
            .SetParam("stride", stride)
            .SetParam("pad", pad)
+           .SetParam("adj", adj)
+           .SetParam("target_shape", target_shape)
            .SetParam("num_group", num_group)
            .SetParam("workspace", workspace)
            .SetParam("no_bias", no_bias)
@@ -345,7 +445,7 @@ inline Symbol Dropout(const std::string& symbol_name,
  * \breif lhs add rhs with broadcast.
  * \param symbol_name name of the resulting symbol.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol broadcast_plus(const std::string& symbol_name,
@@ -361,7 +461,7 @@ inline Symbol broadcast_plus(const std::string& symbol_name,
  * \breif lhs minus rhs with broadcast.
  * \param symbol_name name of the resulting symbol.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol broadcast_minus(const std::string& symbol_name,
@@ -377,7 +477,7 @@ inline Symbol broadcast_minus(const std::string& symbol_name,
  * \breif lhs multiple rhs with broadcast.
  * \param symbol_name name of the resulting symbol.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol broadcast_mul(const std::string& symbol_name,
@@ -393,13 +493,29 @@ inline Symbol broadcast_mul(const std::string& symbol_name,
  * \breif lhs divide rhs with broadcast.
  * \param symbol_name name of the resulting symbol.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol broadcast_div(const std::string& symbol_name,
                             Symbol lhs,
                             Symbol rhs) {
   return Operator("broadcast_div")
+           .SetInput("lhs", lhs)
+           .SetInput("rhs", rhs)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
+ * \breif lhs power rhs with broadcast.
+ * \param symbol_name name of the resulting symbol.
+ * \param lhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
+ * \return new symbol
+ */
+inline Symbol broadcast_power(const std::string& symbol_name,
+                              Symbol lhs,
+                              Symbol rhs) {
+  return Operator("broadcast_power")
            .SetInput("lhs", lhs)
            .SetInput("rhs", rhs)
            .CreateSymbol(symbol_name);
@@ -421,192 +537,156 @@ inline Symbol ElementWiseSum(const std::string& symbol_name,
 /*!
  * \breif Take absolute value of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol abs(const std::string& symbol_name,
-                  Symbol lhs,
-                  Symbol rhs) {
+                  Symbol src) {
   return Operator("abs")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take sign value of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol sign(const std::string& symbol_name,
-                   Symbol lhs,
-                   Symbol rhs) {
+                   Symbol src) {
   return Operator("sign")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take round value of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol round(const std::string& symbol_name,
-                    Symbol lhs,
-                    Symbol rhs) {
+                    Symbol src) {
   return Operator("round")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take ceil value of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol ceil(const std::string& symbol_name,
-                   Symbol lhs,
-                   Symbol rhs) {
+                   Symbol src) {
   return Operator("ceil")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take floor value of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol floor(const std::string& symbol_name,
-                    Symbol lhs,
-                    Symbol rhs) {
+                    Symbol src) {
   return Operator("floor")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take square of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol square(const std::string& symbol_name,
-                     Symbol lhs,
-                     Symbol rhs) {
+                     Symbol src) {
   return Operator("square")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take sqrt of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol sqrt(const std::string& symbol_name,
-                   Symbol lhs,
-                   Symbol rhs) {
+                   Symbol src) {
   return Operator("sqrt")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take rsqrt of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol rsqrt(const std::string& symbol_name,
-                    Symbol lhs,
-                    Symbol rhs) {
+                    Symbol src) {
   return Operator("rsqrt")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take exp of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol exp(const std::string& symbol_name,
-                  Symbol lhs,
-                  Symbol rhs) {
+                  Symbol src) {
   return Operator("exp")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take log of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol log(const std::string& symbol_name,
-                  Symbol lhs,
-                  Symbol rhs) {
+                  Symbol src) {
   return Operator("log")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take cos of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol cos(const std::string& symbol_name,
-                  Symbol lhs,
-                  Symbol rhs) {
+                  Symbol src) {
   return Operator("cos")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
 /*!
  * \breif Take sin of the src.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol sin(const std::string& symbol_name,
-                  Symbol lhs,
-                  Symbol rhs) {
+                  Symbol src) {
   return Operator("sin")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
@@ -691,7 +771,7 @@ inline Symbol IdentityAttachKLSparseReg(const std::string& symbol_name,
  */
 inline Symbol L2Normalization(const std::string& symbol_name,
                               Symbol data,
-                              mx_float eps = 1e-010) {
+                              mx_float eps = 1e-10) {
   return Operator("L2Normalization")
            .SetParam("eps", eps)
            .SetInput("data", data)
@@ -745,7 +825,7 @@ inline Symbol LeakyReLU(const std::string& symbol_name,
  * \breif Calculate cross_entropy(lhs, one_hot(rhs)).
  * \param symbol_name name of the resulting symbol.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol softmax_cross_entropy(const std::string& symbol_name,
@@ -804,16 +884,55 @@ inline Symbol MakeLoss(const std::string& symbol_name,
 /*!
  * \breif Transpose the input matrix and return a new one.
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
+ * \param axes Target axis order.
+ *        By default the axes will be inverted.
  * \return new symbol
  */
 inline Symbol transpose(const std::string& symbol_name,
-                        Symbol lhs,
-                        Symbol rhs) {
+                        Symbol src,
+                        Shape axes = Shape()) {
   return Operator("transpose")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetParam("axes", axes)
+           .SetInput("src", src)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
+ * \breif Expand the shape of array by inserting a new axis. 
+ * \param symbol_name name of the resulting symbol.
+ * \param src Left symbolic input to the function.
+ * \param axis Position (amongst axes) where new axis is to be inserted. 
+ * \return new symbol
+ */
+inline Symbol expand_dims(const std::string& symbol_name,
+                          Symbol src,
+                          int axis) {
+  return Operator("expand_dims")
+           .SetParam("axis", axis)
+           .SetInput("src", src)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
+ * \breif Slice the input along certain axis and return a sliced array. 
+ * \param symbol_name name of the resulting symbol.
+ * \param src Left symbolic input to the function.
+ * \param axis The axis to be sliced.
+ * \param begin The beginning index to be sliced.
+ * \param end The end index to be sliced.
+ * \return new symbol
+ */
+inline Symbol slice_axis(const std::string& symbol_name,
+                         Symbol src,
+                         int axis,
+                         int begin,
+                         int end) {
+  return Operator("slice_axis")
+           .SetParam("axis", axis)
+           .SetParam("begin", begin)
+           .SetParam("end", end)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
@@ -821,13 +940,30 @@ inline Symbol transpose(const std::string& symbol_name,
  * \breif Calculate dot product of two matrices or two vectors.
  * \param symbol_name name of the resulting symbol.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol dot(const std::string& symbol_name,
                   Symbol lhs,
                   Symbol rhs) {
   return Operator("dot")
+           .SetInput("lhs", lhs)
+           .SetInput("rhs", rhs)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
+ * \breif Calculate batched dot product of two matrices.
+ *        (batch, M, K) batch_dot (batch, K, N) --> (batch, M, N)
+ * \param symbol_name name of the resulting symbol.
+ * \param lhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
+ * \return new symbol
+ */
+inline Symbol batch_dot(const std::string& symbol_name,
+                        Symbol lhs,
+                        Symbol rhs) {
+  return Operator("batch_dot")
            .SetInput("lhs", lhs)
            .SetInput("rhs", rhs)
            .CreateSymbol(symbol_name);
@@ -845,12 +981,12 @@ enum class PoolingPoolType {
  * \breif Perform spatial pooling on inputs. 
  * \param symbol_name name of the resulting symbol.
  * \param data Input data to the pooling operator. 
- * \param kernel pooling kernel size: (y, x).
+ * \param kernel pooling kernel size: (y, x) or (d, y, x).
  * \param pool_type Pooling type to be applied. 
  * \param global_pool Ignore kernel size, do global pooling based on current
  *        input feature map. This is useful for input with different shape
- * \param stride stride: for pooling (y, x).
- * \param pad pad for pooling: (y, x).
+ * \param stride stride: for pooling (y, x) or (d, y, x).
+ * \param pad pad for pooling: (y, x) or (d, y, x).
  * \return new symbol
  */
 inline Symbol Pooling(const std::string& symbol_name,
@@ -943,7 +1079,7 @@ inline Symbol LogisticRegressionOutput(const std::string& symbol_name,
  *        ) Target new shape. One and only one dim can be 0, in which case it
  *        will be inferred from the rest of dims
  * \param keep_highest (Deprecated! Use shape instead.
- *        ) Whether keep the highest dim unchanged.If set to yes, than the
+ *        ) Whether keep the highest dim unchanged.If set to true, then the
  *        first dim in target_shape is ignored,and always fixed as input
  * \param shape Target new shape.
  *        If the dim is same, set it to 0. If the dim is set to be -1, it will
@@ -952,8 +1088,12 @@ inline Symbol LogisticRegressionOutput(const std::string& symbol_name,
  */
 inline Symbol Reshape(const std::string& symbol_name,
                       Symbol data,
-                      Shape shape = Shape()) {
+                      Shape target_shape = Shape(0,0),
+                      bool keep_highest = false,
+                       shape = Shape()) {
   return Operator("Reshape")
+           .SetParam("target_shape", target_shape)
+           .SetParam("keep_highest", keep_highest)
            .SetParam("shape", shape)
            .SetInput("data", data)
            .CreateSymbol(symbol_name);
@@ -969,6 +1109,61 @@ inline Symbol Flatten(const std::string& symbol_name,
                       Symbol data) {
   return Operator("Flatten")
            .SetInput("data", data)
+           .CreateSymbol(symbol_name);
+}
+
+/*! \breif the type of RNN to compute.
+ */
+enum class RNNMode {
+  gru = 0,
+  lstm = 1,
+  rnn_relu = 2,
+  rnn_tanh = 3
+};
+
+/*!
+ * \breif Apply a recurrent layer to input. 
+ * \param symbol_name name of the resulting symbol.
+ * \param data Input data to RNN.
+ * \param parameters Vector of all RNN trainable parameters.
+ * \param state initial hidden state of the RNN.
+ * \param state_cell initial cell state for LSTM networks (only for LSTM).
+ * \param state_size size of the state for each layer.
+ * \param num_layers number of stacked layers.
+ * \param mode the type of RNN to compute.
+ * \param bidirectional whether to use bidirectional recurrent layers.
+ * \param p Fraction of the input that gets dropped out at training time.
+ * \param state_outputs Whether to have the states as symbol outputs. 
+ * \return new symbol
+ */
+inline Symbol RNN(const std::string& symbol_name,
+                  Symbol data,
+                  Symbol parameters,
+                  Symbol state,
+                  Symbol state_cell,
+                  int state_size,
+                  int num_layers,
+                  RNNMode mode,
+                  bool bidirectional = false,
+                  mx_float p = 0,
+                  bool state_outputs = false) {
+  static const char *RNNModeValues[] = {
+    "gru",
+    "lstm",
+    "rnn_relu",
+    "rnn_tanh"
+  };
+  return Operator("RNN")
+           .SetParam("state_size", state_size)
+           .SetParam("num_layers", num_layers)
+           .SetParam("mode", RNNModeValues[int(mode)])
+           .SetParam("bidirectional", bidirectional)
+           .SetParam("p", p)
+           .SetParam("state_outputs", state_outputs)
+           .SetInput("data", data)
+           .SetInput("parameters", parameters)
+           .SetInput("state", state)
+           .SetInput("state_cell", state_cell)
            .CreateSymbol(symbol_name);
 }
 
@@ -1003,6 +1198,44 @@ inline Symbol ROIPooling(const std::string& symbol_name,
 }
 
 /*!
+ * \breif Sample a uniform distribution.
+ * \param symbol_name name of the resulting symbol.
+ * \param shape The shape of the output.
+ * \param low The lower bound of distribution.
+ * \param high The upper bound of distribution.
+ * \return new symbol
+ */
+inline Symbol uniform(const std::string& symbol_name,
+                      Shape shape,
+                      mx_float low = 0,
+                      mx_float high = 1) {
+  return Operator("uniform")
+           .SetParam("shape", shape)
+           .SetParam("low", low)
+           .SetParam("high", high)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
+ * \breif Sample a normal distribution.
+ * \param symbol_name name of the resulting symbol.
+ * \param shape The shape of the output.
+ * \param loc Mean of the distribution. 
+ * \param scale Standard deviation of the distribution. 
+ * \return new symbol
+ */
+inline Symbol normal(const std::string& symbol_name,
+                     Shape shape,
+                     mx_float loc = 0,
+                     mx_float scale = 1) {
+  return Operator("normal")
+           .SetParam("shape", shape)
+           .SetParam("loc", loc)
+           .SetParam("scale", scale)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
  * \breif Slice input equally along specified axis.
  * \param symbol_name name of the resulting symbol.
  * \param num_outputs Number of outputs to be sliced. 
@@ -1024,16 +1257,13 @@ inline Symbol SliceChannel(const std::string& symbol_name,
 /*!
  * \breif Calculate Smooth L1 Loss(lhs, scalar).
  * \param symbol_name name of the resulting symbol.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
 inline Symbol smooth_l1(const std::string& symbol_name,
-                        Symbol lhs,
-                        Symbol rhs) {
+                        Symbol src) {
   return Operator("smooth_l1")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol(symbol_name);
 }
 
@@ -1052,9 +1282,9 @@ enum class SoftmaxActivationMode {
 /*!
  * \breif Apply softmax activation to input.
  *        This is intended for internal layers. For output (loss layer) please
- *        use SoftmaxOutput. If type=instance, this operator will compute a
+ *        use SoftmaxOutput. If mode=instance, this operator will compute a
  *        softmax for each instance in the batch; this is the default mode. If
- *        type=channel, this operator will compute a num_channel-class softmax
+ *        mode=channel, this operator will compute a num_channel-class softmax
  *        at each position of each instance; this can be used for fully
  *        convolutional network, image segmentation, etc.
  * \param symbol_name name of the resulting symbol.
@@ -1094,7 +1324,7 @@ enum class SoftmaxOutputNormalization {
  * \breif Perform a softmax transformation on input, backprop with logloss. 
  * \param symbol_name name of the resulting symbol.
  * \param data Input data to softmax. 
- * \param label Label data. 
+ * \param label Label data, can also be probability value with same shape as data.
  * \param grad_scale Scale the gradient by a float factor.
  * \param ignore_label the label value will be ignored during backward (only
  *        works if use_ignore is set to be true).
@@ -1180,6 +1410,80 @@ inline Symbol Softmax(const std::string& symbol_name,
            .CreateSymbol(symbol_name);
 }
 
+/*! \breif transformation type.
+ */
+enum class SpatialTransformerTransformType {
+  affine = 0
+};
+
+/*! \breif sampling type.
+ */
+enum class SpatialTransformerSamplerType {
+  bilinear = 0
+};
+
+/*!
+ * \breif Apply spatial transformer to input feature map. 
+ * \param symbol_name name of the resulting symbol.
+ * \param data Input data to the SpatialTransformerOp. 
+ * \param loc localisation net, the output dim should be 6 when transform_type
+ *        is affine, and the name of loc symbol should better starts with
+ *        'stn_loc', so that initialization it with iddentify tranform, or you
+ *        shold initialize the weight and bias by yourself.
+ * \param transform_type transformation type.
+ * \param sampler_type sampling type.
+ * \param target_shape output shape(h, w) of spatial transformer: (y, x).
+ * \return new symbol
+ */
+inline Symbol SpatialTransformer(const std::string& symbol_name,
+                                 Symbol data,
+                                 Symbol loc,
+                                 SpatialTransformerTransformType transform_type,
+                                 SpatialTransformerSamplerType sampler_type,
+                                 Shape target_shape = Shape(0,0)) {
+  static const char *SpatialTransformerTransformTypeValues[] = {
+    "affine"
+  };
+  static const char *SpatialTransformerSamplerTypeValues[] = {
+    "bilinear"
+  };
+  return Operator("SpatialTransformer")
+           .SetParam("transform_type", SpatialTransformerTransformTypeValues[int(transform_type)])
+           .SetParam("sampler_type", SpatialTransformerSamplerTypeValues[int(sampler_type)])
+           .SetParam("target_shape", target_shape)
+           .SetInput("data", data)
+           .SetInput("loc", loc)
+           .CreateSymbol(symbol_name);
+}
+
+/*!
+ * \breif Support Vector Machine based transformation on input, backprop L2-SVM.
+ * \param symbol_name name of the resulting symbol.
+ * \param data Input data to svm. 
+ * \param label Label data. 
+ * \param margin Scale the DType(param_.
+ *        margin) for activation size
+ * \param regularization_coefficient Scale the coefficient responsible for
+ *        balacing coefficient size and error tradeoff
+ * \param use_linear If set true, uses L1-SVM objective function.
+ *        Default uses L2-SVM objective
+ * \return new symbol
+ */
+inline Symbol SVMOutput(const std::string& symbol_name,
+                        Symbol data,
+                        Symbol label,
+                        mx_float margin = 1,
+                        mx_float regularization_coefficient = 1,
+                        bool use_linear = false) {
+  return Operator("SVMOutput")
+           .SetParam("margin", margin)
+           .SetParam("regularization_coefficient", regularization_coefficient)
+           .SetParam("use_linear", use_linear)
+           .SetInput("data", data)
+           .SetInput("label", label)
+           .CreateSymbol(symbol_name);
+}
+
 /*!
  * \breif Apply swapaxis to input. 
  * \param symbol_name name of the resulting symbol.
@@ -1227,7 +1531,7 @@ enum class UpSamplingMultiInputMode {
  *        will be(scale*h_0,scale*w_0) and all other inputs will be upsampled
  *        to thesame size. For bilinear upsampling this must be 2; 1 input and 1 weight.
  * \param num_filter Input filter.
- *        Only used by nearest sample_type.
+ *        Only used by bilinear sample_type.
  * \param multi_input_mode How to handle multiple input.
  *        concat means concatenate upsampled images along the channel
  *        dimension. sum means add all images together, only available for
@@ -1321,49 +1625,82 @@ inline Symbol BlockGrad(Symbol data) {
 }
 
 /*!
- * \breif (Deprecated! Use sum_axis instead.
- *        ) Take sum of the src.The result will be ndarray of shape (1,) on the
- *        same device.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \breif Take sum of the src in the given axis and returns a NDArray.
+ *        Follows numpy semantics.
+ * \param src Left symbolic input to the function.
+ * \param axis Same as Numpy.
+ *        The axes to perform the reduction.If left empty, a global reduction
+ *        will be performed.
+ * \param keepdims Same as Numpy.
+ *        If keepdims is set to true, the axis which is reduced is left in the
+ *        result as dimension with size one.
  * \return new symbol
  */
-inline Symbol sum(Symbol lhs,
-                  Symbol rhs) {
+inline Symbol sum(Symbol src,
+                  Shape axis = Shape(),
+                  bool keepdims = false) {
   return Operator("sum")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetParam("axis", axis)
+           .SetParam("keepdims", keepdims)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
- * \breif Take sum of the src in the given axis.
- *        axis=-1 means to reduce all the dimensions.The keepdims option has
- *        the same meaning as Numpy.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \breif (Depreciated! Use sum instead!) Take sum of the src in the given axis
+ *        and returns a NDArray. Follows numpy semantics.
+ * \param src Left symbolic input to the function.
+ * \param axis Same as Numpy.
+ *        The axes to perform the reduction.If left empty, a global reduction
+ *        will be performed.
+ * \param keepdims Same as Numpy.
+ *        If keepdims is set to true, the axis which is reduced is left in the
+ *        result as dimension with size one.
  * \return new symbol
  */
-inline Symbol sum_axis(Symbol lhs,
-                       Symbol rhs) {
+inline Symbol sum_axis(Symbol src,
+                       Shape axis = Shape(),
+                       bool keepdims = false) {
   return Operator("sum_axis")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetParam("axis", axis)
+           .SetParam("keepdims", keepdims)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Broadcast data in the given axis to the given size.
  *        The original size of the broadcasting axis must be 1.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
+ * \param axis The axes to perform the broadcasting. 
+ * \param size Target sizes of the broadcasting axes. 
  * \return new symbol
  */
-inline Symbol broadcast_axis(Symbol lhs,
-                             Symbol rhs) {
+inline Symbol broadcast_axis(Symbol src,
+                             Shape axis = Shape(),
+                             Shape size = Shape()) {
   return Operator("broadcast_axis")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetParam("axis", axis)
+           .SetParam("size", size)
+           .SetInput("src", src)
+           .CreateSymbol();
+}
+
+/*!
+ * \breif Broadcast data to the target shape.
+ *        The original size of the broadcasting axis must be 1.
+ * \param src Left symbolic input to the function.
+ * \param shape The shape of the desired array.
+ *        We can set the dim to zero if it's same as the original. E.g `A =
+ *        broadcast_to(B, shape=(10, 0, 0))` has the same meaning as `A =
+ *        broadcast_axis(B, axis=0, size=10)`.
+ * \return new symbol
+ */
+inline Symbol broadcast_to(Symbol src,
+                           Shape shape = Shape()) {
+  return Operator("broadcast_to")
+           .SetParam("shape", shape)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
@@ -1410,16 +1747,20 @@ inline Symbol Concat(const std::vector<Symbol>& data,
  * \param data Input data to the ConvolutionOp. 
  * \param weight Weight matrix. 
  * \param bias Bias parameter. 
- * \param kernel convolution kernel size: (y, x).
+ * \param kernel convolution kernel size: (y, x) or (d, y, x).
  * \param num_filter convolution filter(channel) number.
- * \param stride convolution stride: (y, x).
+ * \param stride convolution stride: (y, x) or (d, y, x).
  * \param dilate convolution dilate: (y, x).
- * \param pad pad for convolution: (y, x).
+ * \param pad pad for convolution: (y, x) or (d, y, x).
  * \param num_group Number of groups partition.
  *        This option is not supported by CuDNN, you can use SliceChannel to
  *        num_group,apply convolution and concat instead to achieve the same need.
  * \param workspace Tmp workspace for convolution (MB). 
  * \param no_bias Whether to disable bias parameter. 
+ * \param cudnn_tune Whether to find convolution algo by running performance test.
+ *        Leads to higher startup time but may give better speed.auto tune is
+ *        turned off by default.Set environment varialbe
+ *        MXNET_CUDNN_AUTOTUNE_DEFAULT=1 to turn on by default.
  * \return new symbol
  */
 inline Symbol Convolution(Symbol data,
@@ -1431,8 +1772,14 @@ inline Symbol Convolution(Symbol data,
                           Shape dilate = Shape(1,1),
                           Shape pad = Shape(0,0),
                           int num_group = 1,
-                          int64_t workspace = 512,
-                          bool no_bias = false) {
+                          int64_t workspace = 1024,
+                          bool no_bias = false,
+                          ConvolutionCudnnTune cudnn_tune = ConvolutionCudnnTune::off) {
+  static const char *ConvolutionCudnnTuneValues[] = {
+    "fastest",
+    "limited_workspace",
+    "off"
+  };
   return Operator("Convolution")
            .SetParam("kernel", kernel)
            .SetParam("num_filter", num_filter)
@@ -1442,9 +1789,42 @@ inline Symbol Convolution(Symbol data,
            .SetParam("num_group", num_group)
            .SetParam("workspace", workspace)
            .SetParam("no_bias", no_bias)
+           .SetParam("cudnn_tune", ConvolutionCudnnTuneValues[int(cudnn_tune)])
            .SetInput("data", data)
            .SetInput("weight", weight)
            .SetInput("bias", bias)
+           .CreateSymbol();
+}
+
+/*!
+ * \breif Apply correlation to inputs.
+ * \param data1 Input data1 to the correlation. 
+ * \param data2 Input data2 to the correlation. 
+ * \param kernel_size kernel size for Correlation must be an odd number.
+ * \param max_displacement Max displacement of Correlation .
+ * \param stride1 stride1 quantize data1 globally.
+ * \param stride2 stride2 quantize data2 within the neighborhood centered around data1.
+ * \param pad_size pad for Correlation.
+ * \param is_multiply operation type is either multiplication or subduction.
+ * \return new symbol
+ */
+inline Symbol Correlation(Symbol data1,
+                          Symbol data2,
+                          int kernel_size = 1,
+                          int max_displacement = 1,
+                          int stride1 = 1,
+                          int stride2 = 1,
+                          int pad_size = 0,
+                          bool is_multiply = true) {
+  return Operator("Correlation")
+           .SetParam("kernel_size", kernel_size)
+           .SetParam("max_displacement", max_displacement)
+           .SetParam("stride1", stride1)
+           .SetParam("stride2", stride2)
+           .SetParam("pad_size", pad_size)
+           .SetParam("is_multiply", is_multiply)
+           .SetInput("data1", data1)
+           .SetInput("data2", data2)
            .CreateSymbol();
 }
 
@@ -1497,7 +1877,12 @@ inline Symbol Custom(const std::string& op_type) {
  * \param kernel deconvolution kernel size: (y, x).
  * \param num_filter deconvolution filter(channel) number.
  * \param stride deconvolution stride: (y, x).
- * \param pad pad for deconvolution: (y, x).
+ * \param pad pad for deconvolution: (y, x), a good number is : (kernel-1)/2,
+ *        if target_shape set, pad will be ignored and will be computed
+ *        automatically
+ * \param adj adjustment for output shape: (y, x), if target_shape set, adj
+ *        will be ignored and will be computed automatically
+ * \param target_shape output shape with targe shape : (y, x).
  * \param num_group number of groups partition.
  * \param workspace Tmp workspace for deconvolution (MB).
  * \param no_bias Whether to disable bias parameter. 
@@ -1510,6 +1895,8 @@ inline Symbol Deconvolution(Symbol data,
                             int num_filter,
                             Shape stride = Shape(1,1),
                             Shape pad = Shape(0,0),
+                            Shape adj = Shape(0,0),
+                            Shape target_shape = Shape(0,0),
                             int num_group = 1,
                             int64_t workspace = 512,
                             bool no_bias = true) {
@@ -1518,6 +1905,8 @@ inline Symbol Deconvolution(Symbol data,
            .SetParam("num_filter", num_filter)
            .SetParam("stride", stride)
            .SetParam("pad", pad)
+           .SetParam("adj", adj)
+           .SetParam("target_shape", target_shape)
            .SetParam("num_group", num_group)
            .SetParam("workspace", workspace)
            .SetParam("no_bias", no_bias)
@@ -1544,7 +1933,7 @@ inline Symbol Dropout(Symbol data,
 /*!
  * \breif lhs add rhs with broadcast.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol broadcast_plus(Symbol lhs,
@@ -1558,7 +1947,7 @@ inline Symbol broadcast_plus(Symbol lhs,
 /*!
  * \breif lhs minus rhs with broadcast.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol broadcast_minus(Symbol lhs,
@@ -1572,7 +1961,7 @@ inline Symbol broadcast_minus(Symbol lhs,
 /*!
  * \breif lhs multiple rhs with broadcast.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol broadcast_mul(Symbol lhs,
@@ -1586,12 +1975,26 @@ inline Symbol broadcast_mul(Symbol lhs,
 /*!
  * \breif lhs divide rhs with broadcast.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol broadcast_div(Symbol lhs,
                             Symbol rhs) {
   return Operator("broadcast_div")
+           .SetInput("lhs", lhs)
+           .SetInput("rhs", rhs)
+           .CreateSymbol();
+}
+
+/*!
+ * \breif lhs power rhs with broadcast.
+ * \param lhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
+ * \return new symbol
+ */
+inline Symbol broadcast_power(Symbol lhs,
+                              Symbol rhs) {
+  return Operator("broadcast_power")
            .SetInput("lhs", lhs)
            .SetInput("rhs", rhs)
            .CreateSymbol();
@@ -1610,169 +2013,133 @@ inline Symbol ElementWiseSum(int num_args) {
 
 /*!
  * \breif Take absolute value of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol abs(Symbol lhs,
-                  Symbol rhs) {
+inline Symbol abs(Symbol src) {
   return Operator("abs")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take sign value of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol sign(Symbol lhs,
-                   Symbol rhs) {
+inline Symbol sign(Symbol src) {
   return Operator("sign")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take round value of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol round(Symbol lhs,
-                    Symbol rhs) {
+inline Symbol round(Symbol src) {
   return Operator("round")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take ceil value of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol ceil(Symbol lhs,
-                   Symbol rhs) {
+inline Symbol ceil(Symbol src) {
   return Operator("ceil")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take floor value of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol floor(Symbol lhs,
-                    Symbol rhs) {
+inline Symbol floor(Symbol src) {
   return Operator("floor")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take square of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol square(Symbol lhs,
-                     Symbol rhs) {
+inline Symbol square(Symbol src) {
   return Operator("square")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take sqrt of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol sqrt(Symbol lhs,
-                   Symbol rhs) {
+inline Symbol sqrt(Symbol src) {
   return Operator("sqrt")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take rsqrt of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol rsqrt(Symbol lhs,
-                    Symbol rhs) {
+inline Symbol rsqrt(Symbol src) {
   return Operator("rsqrt")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take exp of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol exp(Symbol lhs,
-                  Symbol rhs) {
+inline Symbol exp(Symbol src) {
   return Operator("exp")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take log of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol log(Symbol lhs,
-                  Symbol rhs) {
+inline Symbol log(Symbol src) {
   return Operator("log")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take cos of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol cos(Symbol lhs,
-                  Symbol rhs) {
+inline Symbol cos(Symbol src) {
   return Operator("cos")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Take sin of the src.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol sin(Symbol lhs,
-                  Symbol rhs) {
+inline Symbol sin(Symbol src) {
   return Operator("sin")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
@@ -1849,7 +2216,7 @@ inline Symbol IdentityAttachKLSparseReg(Symbol data,
  * \return new symbol
  */
 inline Symbol L2Normalization(Symbol data,
-                              mx_float eps = 1e-010) {
+                              mx_float eps = 1e-10) {
   return Operator("L2Normalization")
            .SetParam("eps", eps)
            .SetInput("data", data)
@@ -1891,7 +2258,7 @@ inline Symbol LeakyReLU(Symbol data,
 /*!
  * \breif Calculate cross_entropy(lhs, one_hot(rhs)).
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol softmax_cross_entropy(Symbol lhs,
@@ -1944,22 +2311,57 @@ inline Symbol MakeLoss(Symbol data,
 
 /*!
  * \breif Transpose the input matrix and return a new one.
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
+ * \param axes Target axis order.
+ *        By default the axes will be inverted.
  * \return new symbol
  */
-inline Symbol transpose(Symbol lhs,
-                        Symbol rhs) {
+inline Symbol transpose(Symbol src,
+                        Shape axes = Shape()) {
   return Operator("transpose")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetParam("axes", axes)
+           .SetInput("src", src)
+           .CreateSymbol();
+}
+
+/*!
+ * \breif Expand the shape of array by inserting a new axis. 
+ * \param src Left symbolic input to the function.
+ * \param axis Position (amongst axes) where new axis is to be inserted. 
+ * \return new symbol
+ */
+inline Symbol expand_dims(Symbol src,
+                          int axis) {
+  return Operator("expand_dims")
+           .SetParam("axis", axis)
+           .SetInput("src", src)
+           .CreateSymbol();
+}
+
+/*!
+ * \breif Slice the input along certain axis and return a sliced array. 
+ * \param src Left symbolic input to the function.
+ * \param axis The axis to be sliced.
+ * \param begin The beginning index to be sliced.
+ * \param end The end index to be sliced.
+ * \return new symbol
+ */
+inline Symbol slice_axis(Symbol src,
+                         int axis,
+                         int begin,
+                         int end) {
+  return Operator("slice_axis")
+           .SetParam("axis", axis)
+           .SetParam("begin", begin)
+           .SetParam("end", end)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Calculate dot product of two matrices or two vectors.
  * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
  * \return new symbol
  */
 inline Symbol dot(Symbol lhs,
@@ -1971,14 +2373,29 @@ inline Symbol dot(Symbol lhs,
 }
 
 /*!
+ * \breif Calculate batched dot product of two matrices.
+ *        (batch, M, K) batch_dot (batch, K, N) --> (batch, M, N)
+ * \param lhs Left symbolic input to the function.
+ * \param rhs Right symbolic input to the function.
+ * \return new symbol
+ */
+inline Symbol batch_dot(Symbol lhs,
+                        Symbol rhs) {
+  return Operator("batch_dot")
+           .SetInput("lhs", lhs)
+           .SetInput("rhs", rhs)
+           .CreateSymbol();
+}
+
+/*!
  * \breif Perform spatial pooling on inputs. 
  * \param data Input data to the pooling operator. 
- * \param kernel pooling kernel size: (y, x).
+ * \param kernel pooling kernel size: (y, x) or (d, y, x).
  * \param pool_type Pooling type to be applied. 
  * \param global_pool Ignore kernel size, do global pooling based on current
  *        input feature map. This is useful for input with different shape
- * \param stride stride: for pooling (y, x).
- * \param pad pad for pooling: (y, x).
+ * \param stride stride: for pooling (y, x) or (d, y, x).
+ * \param pad pad for pooling: (y, x) or (d, y, x).
  * \return new symbol
  */
 inline Symbol Pooling(Symbol data,
@@ -2063,7 +2480,7 @@ inline Symbol LogisticRegressionOutput(Symbol data,
  *        ) Target new shape. One and only one dim can be 0, in which case it
  *        will be inferred from the rest of dims
  * \param keep_highest (Deprecated! Use shape instead.
- *        ) Whether keep the highest dim unchanged.If set to yes, than the
+ *        ) Whether keep the highest dim unchanged.If set to true, then the
  *        first dim in target_shape is ignored,and always fixed as input
  * \param shape Target new shape.
  *        If the dim is same, set it to 0. If the dim is set to be -1, it will
@@ -2071,8 +2488,12 @@ inline Symbol LogisticRegressionOutput(Symbol data,
  * \return new symbol
  */
 inline Symbol Reshape(Symbol data,
-                      Shape shape = Shape()) {
+                      Shape target_shape = Shape(0,0),
+                      bool keep_highest = false,
+                       shape = Shape()) {
   return Operator("Reshape")
+           .SetParam("target_shape", target_shape)
+           .SetParam("keep_highest", keep_highest)
            .SetParam("shape", shape)
            .SetInput("data", data)
            .CreateSymbol();
@@ -2086,6 +2507,50 @@ inline Symbol Reshape(Symbol data,
 inline Symbol Flatten(Symbol data) {
   return Operator("Flatten")
            .SetInput("data", data)
+           .CreateSymbol();
+}
+
+/*!
+ * \breif Apply a recurrent layer to input. 
+ * \param data Input data to RNN.
+ * \param parameters Vector of all RNN trainable parameters.
+ * \param state initial hidden state of the RNN.
+ * \param state_cell initial cell state for LSTM networks (only for LSTM).
+ * \param state_size size of the state for each layer.
+ * \param num_layers number of stacked layers.
+ * \param mode the type of RNN to compute.
+ * \param bidirectional whether to use bidirectional recurrent layers.
+ * \param p Fraction of the input that gets dropped out at training time.
+ * \param state_outputs Whether to have the states as symbol outputs. 
+ * \return new symbol
+ */
+inline Symbol RNN(Symbol data,
+                  Symbol parameters,
+                  Symbol state,
+                  Symbol state_cell,
+                  int state_size,
+                  int num_layers,
+                  RNNMode mode,
+                  bool bidirectional = false,
+                  mx_float p = 0,
+                  bool state_outputs = false) {
+  static const char *RNNModeValues[] = {
+    "gru",
+    "lstm",
+    "rnn_relu",
+    "rnn_tanh"
+  };
+  return Operator("RNN")
+           .SetParam("state_size", state_size)
+           .SetParam("num_layers", num_layers)
+           .SetParam("mode", RNNModeValues[int(mode)])
+           .SetParam("bidirectional", bidirectional)
+           .SetParam("p", p)
+           .SetParam("state_outputs", state_outputs)
+           .SetInput("data", data)
+           .SetInput("parameters", parameters)
+           .SetInput("state", state)
+           .SetInput("state_cell", state_cell)
            .CreateSymbol();
 }
 
@@ -2118,6 +2583,40 @@ inline Symbol ROIPooling(Symbol data,
 }
 
 /*!
+ * \breif Sample a uniform distribution.
+ * \param shape The shape of the output.
+ * \param low The lower bound of distribution.
+ * \param high The upper bound of distribution.
+ * \return new symbol
+ */
+inline Symbol uniform(Shape shape,
+                      mx_float low = 0,
+                      mx_float high = 1) {
+  return Operator("uniform")
+           .SetParam("shape", shape)
+           .SetParam("low", low)
+           .SetParam("high", high)
+           .CreateSymbol();
+}
+
+/*!
+ * \breif Sample a normal distribution.
+ * \param shape The shape of the output.
+ * \param loc Mean of the distribution. 
+ * \param scale Standard deviation of the distribution. 
+ * \return new symbol
+ */
+inline Symbol normal(Shape shape,
+                     mx_float loc = 0,
+                     mx_float scale = 1) {
+  return Operator("normal")
+           .SetParam("shape", shape)
+           .SetParam("loc", loc)
+           .SetParam("scale", scale)
+           .CreateSymbol();
+}
+
+/*!
  * \breif Slice input equally along specified axis.
  * \param num_outputs Number of outputs to be sliced. 
  * \param axis Dimension along which to slice. 
@@ -2136,24 +2635,21 @@ inline Symbol SliceChannel(int num_outputs,
 
 /*!
  * \breif Calculate Smooth L1 Loss(lhs, scalar).
- * \param lhs Left symbolic input to the function.
- * \param rhs Left symbolic input to the function.
+ * \param src Left symbolic input to the function.
  * \return new symbol
  */
-inline Symbol smooth_l1(Symbol lhs,
-                        Symbol rhs) {
+inline Symbol smooth_l1(Symbol src) {
   return Operator("smooth_l1")
-           .SetInput("lhs", lhs)
-           .SetInput("rhs", rhs)
+           .SetInput("src", src)
            .CreateSymbol();
 }
 
 /*!
  * \breif Apply softmax activation to input.
  *        This is intended for internal layers. For output (loss layer) please
- *        use SoftmaxOutput. If type=instance, this operator will compute a
+ *        use SoftmaxOutput. If mode=instance, this operator will compute a
  *        softmax for each instance in the batch; this is the default mode. If
- *        type=channel, this operator will compute a num_channel-class softmax
+ *        mode=channel, this operator will compute a num_channel-class softmax
  *        at each position of each instance; this can be used for fully
  *        convolutional network, image segmentation, etc.
  * \param data Input data to activation function. 
@@ -2180,7 +2676,7 @@ inline Symbol SoftmaxActivation(Symbol data,
 /*!
  * \breif Perform a softmax transformation on input, backprop with logloss. 
  * \param data Input data to softmax. 
- * \param label Label data. 
+ * \param label Label data, can also be probability value with same shape as data.
  * \param grad_scale Scale the gradient by a float factor.
  * \param ignore_label the label value will be ignored during backward (only
  *        works if use_ignore is set to be true).
@@ -2254,6 +2750,64 @@ inline Symbol Softmax(Symbol data,
 }
 
 /*!
+ * \breif Apply spatial transformer to input feature map. 
+ * \param data Input data to the SpatialTransformerOp. 
+ * \param loc localisation net, the output dim should be 6 when transform_type
+ *        is affine, and the name of loc symbol should better starts with
+ *        'stn_loc', so that initialization it with iddentify tranform, or you
+ *        shold initialize the weight and bias by yourself.
+ * \param transform_type transformation type.
+ * \param sampler_type sampling type.
+ * \param target_shape output shape(h, w) of spatial transformer: (y, x).
+ * \return new symbol
+ */
+inline Symbol SpatialTransformer(Symbol data,
+                                 Symbol loc,
+                                 SpatialTransformerTransformType transform_type,
+                                 SpatialTransformerSamplerType sampler_type,
+                                 Shape target_shape = Shape(0,0)) {
+  static const char *SpatialTransformerTransformTypeValues[] = {
+    "affine"
+  };
+  static const char *SpatialTransformerSamplerTypeValues[] = {
+    "bilinear"
+  };
+  return Operator("SpatialTransformer")
+           .SetParam("transform_type", SpatialTransformerTransformTypeValues[int(transform_type)])
+           .SetParam("sampler_type", SpatialTransformerSamplerTypeValues[int(sampler_type)])
+           .SetParam("target_shape", target_shape)
+           .SetInput("data", data)
+           .SetInput("loc", loc)
+           .CreateSymbol();
+}
+
+/*!
+ * \breif Support Vector Machine based transformation on input, backprop L2-SVM.
+ * \param data Input data to svm. 
+ * \param label Label data. 
+ * \param margin Scale the DType(param_.
+ *        margin) for activation size
+ * \param regularization_coefficient Scale the coefficient responsible for
+ *        balacing coefficient size and error tradeoff
+ * \param use_linear If set true, uses L1-SVM objective function.
+ *        Default uses L2-SVM objective
+ * \return new symbol
+ */
+inline Symbol SVMOutput(Symbol data,
+                        Symbol label,
+                        mx_float margin = 1,
+                        mx_float regularization_coefficient = 1,
+                        bool use_linear = false) {
+  return Operator("SVMOutput")
+           .SetParam("margin", margin)
+           .SetParam("regularization_coefficient", regularization_coefficient)
+           .SetParam("use_linear", use_linear)
+           .SetInput("data", data)
+           .SetInput("label", label)
+           .CreateSymbol();
+}
+
+/*!
  * \breif Apply swapaxis to input. 
  * \param data Input data to the SwapAxisOp. 
  * \param dim1 the first axis to be swapped. 
@@ -2280,7 +2834,7 @@ inline Symbol SwapAxis(Symbol data,
  *        will be(scale*h_0,scale*w_0) and all other inputs will be upsampled
  *        to thesame size. For bilinear upsampling this must be 2; 1 input and 1 weight.
  * \param num_filter Input filter.
- *        Only used by nearest sample_type.
+ *        Only used by bilinear sample_type.
  * \param multi_input_mode How to handle multiple input.
  *        concat means concatenate upsampled images along the channel
  *        dimension. sum means add all images together, only available for

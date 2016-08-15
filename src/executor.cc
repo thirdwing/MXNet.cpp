@@ -11,11 +11,12 @@
 #include <vector>
 #include <map>
 #include <string>
-#include "mxnet-cpp/executor.h"
-#include "mxnet-cpp/optimizer.h"
+#include "executor.h"
+#include "optimizer.h"
 
 namespace mxnet {
 namespace cpp {
+
 Executor::Executor(const Symbol &symbol, Context context,
                    const std::vector<NDArray> &arg_arrays,
                    const std::vector<NDArray> &grad_arrays,
