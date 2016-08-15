@@ -41,7 +41,6 @@ cache:
 
 notifications:
 # Emails are sent to the committer's git-configured email address by default,
-  email:
-    on_success: change
-    on_failure: always
-  #slack: dmlc:NmroCzntCiWOuxUZpii40USd
+email:
+  on_success: change
+  on_failure: change
